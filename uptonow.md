@@ -90,6 +90,7 @@ Stack:
 - Pydantic
 - PostgreSQL target
 - SQLite fallback for local development when no `.env` is present
+- Alembic migrations
 - pytest
 
 Key files:
@@ -102,6 +103,8 @@ backend/app/database/base.py
 backend/app/database/session.py
 backend/app/api/dependencies.py
 backend/app/api/v1/router.py
+backend/alembic.ini
+backend/alembic/env.py
 ```
 
 Backend structure follows the planned layered architecture:
@@ -268,6 +271,93 @@ bcrypt<5
 ```
 
 was added to `backend/requirements.txt` because `passlib==1.7.4` is not compatible with `bcrypt==5`.
+
+## Alembic Migration Status
+
+Alembic migration support has been implemented safely.
+
+Completed:
+
+- Removed `Base.metadata.create_all(bind=engine)` from FastAPI startup.
+- Added Alembic dependency to `backend/requirements.txt`.
+- Added Alembic configuration at `backend/alembic.ini`.
+- Added migration environment at `backend/alembic/env.py`.
+- Added migration template at `backend/alembic/script.py.mako`.
+- Added initial schema migration:
+
+```text
+backend/alembic/versions/20260601_0001_initial_schema.py
+```
+
+The initial migration preserves the existing schema from the current models:
+
+- `roles`
+- `users`
+- `sessions`
+- `workflows`
+- `workflow_steps`
+- `executions`
+- `execution_logs`
+- `ai_logs`
+- `webhook_logs`
+- `notifications`
+- `audit_logs`
+
+Alembic uses `settings.database_url`, so the same `DATABASE_URL` environment variable controls migrations and runtime database access.
+
+PostgreSQL target example:
+
+```text
+postgresql+psycopg://postgres:postgres@localhost:5432/ai_workflow
+```
+
+Migration commands from the repository root:
+
+```powershell
+python -m alembic -c backend\alembic.ini upgrade head
+```
+
+Generate a new migration after model changes:
+
+```powershell
+python -m alembic -c backend\alembic.ini revision --autogenerate -m "describe change"
+```
+
+Rollback one migration:
+
+```powershell
+python -m alembic -c backend\alembic.ini downgrade -1
+```
+
+Rollback to empty schema:
+
+```powershell
+python -m alembic -c backend\alembic.ini downgrade base
+```
+
+Important migration note:
+
+If a local database was already created by the old startup `create_all()` behavior, stamp it instead of recreating tables:
+
+```powershell
+python -m alembic -c backend\alembic.ini stamp head
+```
+
+For a fresh database, run:
+
+```powershell
+python -m alembic -c backend\alembic.ini upgrade head
+```
+
+Validation completed:
+
+```text
+python -m compileall backend\app backend\alembic
+python -m alembic -c backend\alembic.ini heads
+python -m alembic -c backend\alembic.ini history
+```
+
+Also validated `upgrade head` against an in-memory SQLite database.
 
 ## Workflow Engine Status
 
@@ -494,15 +584,13 @@ http://localhost:3000/register -> 200
 
 ### Database Migrations
 
-Alembic is not yet set up.
+Alembic is now set up. Startup table creation has been removed.
 
-Current scaffold creates tables automatically on FastAPI startup using:
+Still needed:
 
-```python
-Base.metadata.create_all(bind=engine)
-```
-
-This is acceptable for the early scaffold but should be replaced with Alembic migrations soon.
+- Run `alembic upgrade head` as part of local setup or container startup.
+- Add CI validation for migration heads.
+- Add a deployment step that runs migrations before starting new backend containers.
 
 ### Frontend Auth Guard
 
@@ -592,17 +680,17 @@ The next best phase is Phase 4 completion: Workflow Engine.
 
 Recommended order:
 
-1. Add Alembic migrations before workflow logic grows further.
-2. Replace startup `create_all` with migration-based database setup.
-3. Add real workflow step handler registry.
-4. Implement step types:
+1. Add migration execution to Docker/local setup documentation or backend container startup.
+2. Add real workflow step handler registry.
+3. Implement step types:
    - `ai_summarize`
    - `ai_classify`
    - `notify`
    - `approval`
    - `webhook_call`
-5. Store step-level execution results.
-6. Add retry count, max retry count, and failure reason fields.
+4. Store step-level execution results.
+5. Add retry count, max retry count, and failure reason fields.
+6. Generate a new Alembic migration for workflow execution metadata changes.
 7. Wire frontend dashboard to real protected workflow APIs.
 8. Add logout and frontend auth guard.
 
@@ -612,6 +700,18 @@ Backend tests:
 
 ```powershell
 python -m pytest
+```
+
+Run database migrations:
+
+```powershell
+python -m alembic -c backend\alembic.ini upgrade head
+```
+
+Create a new migration:
+
+```powershell
+python -m alembic -c backend\alembic.ini revision --autogenerate -m "describe change"
 ```
 
 Backend syntax check:
@@ -645,6 +745,5 @@ docker compose up --build
 Use this if starting a fresh Codex session:
 
 ```text
-Read uptonow.md and all .ai files. Continue the AI Workflow Automation Platform from the current state. The next priority is completing Phase 4 workflow engine safely: add Alembic migrations first, then implement real workflow step handlers, step-level execution results, retry metadata, and wire the dashboard to protected backend workflow APIs. Preserve existing architecture and tests.
+Read uptonow.md and all .ai files. Continue the AI Workflow Automation Platform from the current state. Alembic migration support is already implemented and startup create_all has been removed. The next priority is completing Phase 4 workflow engine safely: add migration execution to setup/deployment, implement real workflow step handlers, add step-level execution results and retry metadata with a new Alembic migration, then wire the dashboard to protected backend workflow APIs. Preserve existing architecture and tests.
 ```
-
