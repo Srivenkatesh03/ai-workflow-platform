@@ -100,11 +100,13 @@ backend/app/main.py
 backend/app/core/config.py
 backend/app/core/celery.py
 backend/app/core/security.py
+backend/app/core/websockets.py
 backend/app/database/base.py
 backend/app/database/session.py
 backend/app/api/dependencies.py
 backend/app/api/v1/router.py
 backend/app/api/v1/routes/queue.py
+backend/app/api/v1/routes/ws.py
 backend/app/worker.py
 backend/app/tasks/workflow_tasks.py
 backend/app/tasks/ai_tasks.py
@@ -494,16 +496,18 @@ Frontend routes:
 
 Implemented:
 
-- Operational dashboard fully integrated with live backend APIs (workflows, executions, and queue status)
-- Sidebar navigation dynamically displaying user profiles, roles, and functional log-out operations
-- Real-time polling fetching data every 4 seconds for immediate operation updates
-- Queue status dashboard showing Redis connection, worker states, and queued tasks
+- Operational dashboard fully integrated with live backend APIs and WebSockets
+- Real-time WebSocket connection manager securely authenticated using JWT access tokens
+- Live execution event broadcasting and step progress status updates via Redis Pub/Sub
+- Timeline stepper displays updated in real time with active loaders and elapsed seconds metrics
+- Live queue metrics display for Redis Broker connections, pending task count, and worker scaling counts
+- Reconnect safeguards with exponential backoff retries when WebSockets go offline
+- Automatic fallback to REST API polling ONLY when WebSocket connections are disrupted
+- Dashboard header badge dynamically showing "Live Stream Connected" / "Reconnecting" / "Offline"
 - Workflow CRUD controls (creating workflows with interactive step builders, editing properties, deleting rows)
 - Execution triggers enabling manual workflow executes with customizable JSON inputs
-- Timeline stepper displays showing step logs, metrics, duration timers, retry factors, and JSON results
 - Centralized Auth Context managing user state, credentials, and client route protection
 - API client with transparent automatic refresh token logic for smooth session continuation on 401s
-- Visual error indicators with Try Reconnect triggers for offline fallback handling
 
 Key files:
 
@@ -516,6 +520,7 @@ frontend/components/auth-form.tsx
 frontend/components/sidebar.tsx
 frontend/components/status-pill.tsx
 frontend/context/auth-context.tsx
+frontend/hooks/use-websocket.ts
 frontend/services/api.ts
 frontend/services/auth.ts
 frontend/services/workflow.ts
@@ -707,11 +712,12 @@ Marked complete:
 - Phase 3 authentication
 - Phase 4 workflow engine (fully complete including Redis/Celery async queue background execution)
 - Phase 5 AI integration (Production-grade Ollama integration, robust timeout/retry mechanics, schema extended metrics tracking, prompt templates system foundation, and `/api/generate` & `/api/chat` endpoints are fully complete!)
+- Phase 8 frontend dashboard (fully complete including real-time API integrations, auth guards, token persistence, queue monitoring dashboard, workflow CRUD modals, and execution details timelines)
+- WebSocket Realtime Tracking (fully complete including connection manager, JWT auth params, Redis Pub/Sub workers, step updates, retry timelines, automatic queue updates, and exponential backoff reconnects)
 - Phase 10 - Redis queue (from Advanced Features)
 
 Partially complete:
 
-- Phase 8 frontend dashboard (fully complete including real-time API integrations, auth guards, token persistence, queue monitoring dashboard, workflow CRUD modals, and execution details timelines)
 - Phase 9 DevOps (Nginx setup completed)
 
 Not complete:

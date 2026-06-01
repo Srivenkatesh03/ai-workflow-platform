@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { 
   Activity, 
   AlertTriangle, 
@@ -37,10 +37,12 @@ import {
   BackendWorkflowRead,
   ExecutionRead,
   QueueStatusRead,
-  BackendWorkflowStep
+  BackendWorkflowStep,
+  StepExecutionRead
 } from "@/services/workflow";
 import { apiRequest } from "@/services/api";
 import { ApiResponse } from "@/types/auth";
+import { useWebsocket, WebSocketEvent } from "@/hooks/use-websocket";
 
 export default function Home() {
   const { user } = useAuth();
@@ -109,13 +111,174 @@ export default function Home() {
     }
   }
 
-  // Initial load and polling setup
+  // Handle incoming realtime events from WebSocket Connection
+  const handleRealtimeEvent = useCallback((event: WebSocketEvent) => {
+    const { event: eventName, execution_id, workflow_id, timestamp, data } = event;
+
+    if (eventName === "queue_updated") {
+      setQueueStatus(data as QueueStatusRead);
+      return;
+    }
+
+    // Refresh workflows list to sync metrics dynamically on creations/completions
+    if (eventName === "workflow_completed" || eventName === "workflow_queued") {
+      fetchWorkflows().then(setWorkflows).catch(console.error);
+    }
+
+    // Helper state synchronizer for both main list and execution viewer
+    const updateExecutionInState = (updater: (ex: ExecutionRead) => ExecutionRead) => {
+      setExecutions(prev => {
+        const index = prev.findIndex(ex => ex.id === execution_id);
+        if (index === -1) {
+          // If not found in the list yet, insert a new placeholder log
+          if (eventName === "workflow_queued" || eventName === "workflow_started") {
+            const newEx: ExecutionRead = {
+              id: execution_id,
+              workflow_id: workflow_id,
+              status: (data.status as any) || "pending",
+              started_at: timestamp,
+              completed_at: null,
+              step_executions: []
+            };
+            return [newEx, ...prev];
+          }
+          return prev;
+        }
+        return prev.map(ex => ex.id === execution_id ? updater(ex) : ex);
+      });
+
+      setSelectedExecution(prev => {
+        if (!prev || prev.id !== execution_id) return prev;
+        return updater(prev);
+      });
+    };
+
+    // Realtime action dispatcher
+    switch (eventName) {
+      case "workflow_queued":
+        showToast(`Workflow enqueued in Celery: ${data.workflow_name}`);
+        updateExecutionInState(ex => ({
+          ...ex,
+          status: "pending",
+          started_at: timestamp
+        }));
+        break;
+
+      case "workflow_started":
+        showToast(`Execution started: ${data.workflow_name}`);
+        updateExecutionInState(ex => ({
+          ...ex,
+          status: "running",
+          started_at: data.started_at || timestamp
+        }));
+        break;
+
+      case "step_started":
+        updateExecutionInState(ex => {
+          const newStep: StepExecutionRead = {
+            id: data.step_id,
+            execution_id: execution_id,
+            step_id: data.step_id,
+            status: "running",
+            failure_reason: null,
+            retry_count: 0,
+            duration_sec: 0,
+            results: null,
+            created_at: timestamp,
+            updated_at: null,
+            step_type: data.step_type,
+            step_order: data.step_order
+          };
+          const exists = ex.step_executions.some(s => s.id === data.step_id);
+          const updatedSteps = exists 
+            ? ex.step_executions.map(s => s.id === data.step_id ? { ...s, status: "running" } : s)
+            : [...ex.step_executions, newStep];
+          
+          return {
+            ...ex,
+            status: "running",
+            step_executions: updatedSteps.sort((a, b) => (a.step_order ?? 0) - (b.step_order ?? 0))
+          };
+        });
+        break;
+
+      case "retry_triggered":
+        updateExecutionInState(ex => {
+          return {
+            ...ex,
+            status: "retrying",
+            step_executions: ex.step_executions.map(s => 
+              s.id === data.step_id 
+                ? { ...s, status: "retrying", retry_count: data.retry_count, failure_reason: data.failure_reason } 
+                : s
+            )
+          };
+        });
+        break;
+
+      case "step_completed":
+        updateExecutionInState(ex => {
+          return {
+            ...ex,
+            step_executions: ex.step_executions.map(s => 
+              s.id === data.step_id 
+                ? { ...s, status: "completed", duration_sec: data.duration_sec, results: data.results } 
+                : s
+            )
+          };
+        });
+        break;
+
+      case "step_failed":
+        updateExecutionInState(ex => {
+          return {
+            ...ex,
+            step_executions: ex.step_executions.map(s => 
+              s.id === data.step_id 
+                ? { ...s, status: "failed", duration_sec: data.duration_sec, failure_reason: data.failure_reason } 
+                : s
+            )
+          };
+        });
+        break;
+
+      case "workflow_completed":
+        if (data.status === "completed") {
+          showToast(`Workflow execution succeeded: ${data.workflow_name}`);
+        } else {
+          showToast(`Workflow execution failed: ${data.message}`, "error");
+        }
+        updateExecutionInState(ex => ({
+          ...ex,
+          status: data.status,
+          completed_at: data.completed_at || timestamp
+        }));
+        break;
+
+      default:
+        break;
+    }
+  }, [selectedExecution]);
+
+  // Connect to live WebSocket events and state streams
+  const { isConnected, isConnecting, queueMetrics } = useWebsocket(handleRealtimeEvent);
+
+  // Sync real-time queue states directly from WebSockets
+  useEffect(() => {
+    if (queueMetrics) {
+      setQueueStatus(queueMetrics);
+    }
+  }, [queueMetrics]);
+
+  // Initial load and connection-aware polling backup
   useEffect(() => {
     loadData();
 
-    // Poll executions & queue status every 4 seconds for a real-time dashboard feel
+    // Poll live server metrics only if the WebSocket goes offline
     pollingInterval.current = setInterval(() => {
-      loadData(true);
+      if (!isConnected) {
+        loadData(true);
+      }
     }, 4000);
 
     return () => {
@@ -123,7 +286,7 @@ export default function Home() {
         clearInterval(pollingInterval.current);
       }
     };
-  }, []);
+  }, [isConnected]);
 
   // Show a toast message
   function showToast(message: string, type: "success" | "error" = "success") {
@@ -415,11 +578,25 @@ export default function Home() {
         {/* Header */}
         <header className="flex flex-wrap items-center justify-between gap-4 border-b border-line bg-white px-4 py-4 md:px-7">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl font-bold tracking-tight">Workflow Operations</h1>
               {isRefreshing && <Loader2 size={16} className="text-slate-400 animate-spin" />}
+              
+              {/* Pulsing Live Connection Status Pill */}
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold border transition-all duration-300 ${
+                isConnected 
+                  ? "bg-emerald-50 border-emerald-200 text-emerald-800" 
+                  : isConnecting 
+                  ? "bg-amber-50 border-amber-200 text-amber-800" 
+                  : "bg-red-50 border-red-200 text-red-800"
+              }`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${
+                  isConnected ? "bg-emerald-500 animate-pulse" : isConnecting ? "bg-amber-500 animate-bounce" : "bg-red-500"
+                }`} />
+                {isConnected ? "Live Stream Connected" : isConnecting ? "Reconnecting stream..." : "Stream Offline"}
+              </span>
             </div>
-            <p className="mt-1 text-xs text-slate-500">Monitor executions, queue statuses, and sequential AI tasks.</p>
+            <p className="mt-1 text-xs text-slate-500">Monitor executions, queue statuses, and sequential AI tasks in realtime.</p>
           </div>
           <div className="flex items-center gap-3">
             <button 
