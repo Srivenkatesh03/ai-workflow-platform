@@ -1,0 +1,68 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ai-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_workflow
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_workflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    container_name: ai-backend
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: ai-frontend
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+  n8n:
+    image: n8nio/n8n:1.72.1
+    container_name: ai-n8n
+    environment:
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+    volumes:
+      - n8n-data:/home/node/.n8n
+    ports:
+      - "5678:5678"
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: ai-nginx
+    depends_on:
+      - frontend
+      - backend
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8080:80"
+
+volumes:
+  postgres-data:
+  n8n-data:
+

@@ -1,0 +1,16 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+.next/
+out/
+dist/
+coverage/
+*.log
+*.db
+uploads/
+postgres-data/
+n8n-data/

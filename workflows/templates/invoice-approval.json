@@ -1,0 +1,30 @@
+{
+  "name": "Invoice Approval Workflow",
+  "trigger_type": "webhook",
+  "steps": [
+    {
+      "step_order": 1,
+      "step_type": "document_extract",
+      "configuration": {
+        "fields": ["vendor", "amount", "due_date"]
+      }
+    },
+    {
+      "step_order": 2,
+      "step_type": "approval",
+      "configuration": {
+        "threshold": 5000,
+        "approver_role": "finance_manager"
+      }
+    },
+    {
+      "step_order": 3,
+      "step_type": "notify",
+      "configuration": {
+        "channel": "slack",
+        "recipient": "#finance-ops"
+      }
+    }
+  ]
+}
+

@@ -1,0 +1,29 @@
+{
+  "name": "Resume Screening Workflow",
+  "trigger_type": "webhook",
+  "steps": [
+    {
+      "step_order": 1,
+      "step_type": "document_extract",
+      "configuration": {
+        "source": "uploaded_resume"
+      }
+    },
+    {
+      "step_order": 2,
+      "step_type": "ai_classify",
+      "configuration": {
+        "labels": ["shortlist", "review", "reject"]
+      }
+    },
+    {
+      "step_order": 3,
+      "step_type": "notify",
+      "configuration": {
+        "channel": "email",
+        "recipient_role": "hr"
+      }
+    }
+  ]
+}
+
