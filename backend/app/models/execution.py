@@ -18,4 +18,6 @@ class Execution(UUIDPrimaryKeyMixin, Base):
 
     workflow: Mapped["Workflow"] = relationship(back_populates="executions")
     logs: Mapped[list["ExecutionLog"]] = relationship(back_populates="execution", cascade="all, delete-orphan")
+    step_executions: Mapped[list["StepExecution"]] = relationship(back_populates="execution", cascade="all, delete-orphan")
+
 

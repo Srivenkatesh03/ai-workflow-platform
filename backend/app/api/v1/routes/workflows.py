@@ -62,4 +62,5 @@ async def execute_workflow(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ) -> APIResponse[ExecutionRead]:
-    return APIResponse(message="Workflow execution completed", data=WorkflowService(db).execute_workflow(workflow_id, payload))
+    return APIResponse(message="Workflow execution completed", data=await WorkflowService(db).execute_workflow(workflow_id, payload))
+

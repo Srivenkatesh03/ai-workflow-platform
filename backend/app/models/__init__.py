@@ -5,6 +5,7 @@ from app.models.execution_log import ExecutionLog
 from app.models.notification import Notification
 from app.models.role import Role
 from app.models.session import Session
+from app.models.step_execution import StepExecution
 from app.models.user import User
 from app.models.webhook_log import WebhookLog
 from app.models.workflow import Workflow
@@ -18,9 +19,11 @@ __all__ = [
     "Notification",
     "Role",
     "Session",
+    "StepExecution",
     "User",
     "WebhookLog",
     "Workflow",
     "WorkflowStep",
 ]
+
 

@@ -289,7 +289,13 @@ Completed:
 backend/alembic/versions/20260601_0001_initial_schema.py
 ```
 
-The initial migration preserves the existing schema from the current models:
+- Added second schema migration for step execution tracking:
+
+```text
+backend/alembic/versions/5a58ceb04e1c_add_step_executions.py
+```
+
+The migrations preserve the schema and add:
 
 - `roles`
 - `users`
@@ -302,6 +308,8 @@ The initial migration preserves the existing schema from the current models:
 - `webhook_logs`
 - `notifications`
 - `audit_logs`
+- `step_executions` (tracks step status, failure reason, retry count, duration, results)
+
 
 Alembic uses `settings.database_url`, so the same `DATABASE_URL` environment variable controls migrations and runtime database access.
 
@@ -361,7 +369,7 @@ Also validated `upgrade head` against an in-memory SQLite database.
 
 ## Workflow Engine Status
 
-Partially implemented.
+Mostly completed.
 
 Completed:
 
@@ -374,24 +382,31 @@ Completed:
 - Retry endpoint
 - Basic sequential step logging
 - Webhook trigger endpoint
+- Step handler registry & base step interface
+- Five real step handlers: `ai_summarize`, `ai_classify`, `notify` (logs + DB notification entry), `webhook_call` (httpx async requests), and `approval` (automatic placeholder)
+- Context-aware dynamic variable/template resolution (`{{ payload.xxx }}` or `{{ steps.xxx.yyy }}`)
+- Step-level execution tracking table `step_executions`
+- Exponential and linear retry logic with backoff delay
+- Failure isolation by step (using `continue_on_error` configuration)
+- Full async execution engine in backend service and API controllers
 
 Current behavior:
 
-- A workflow can be created with steps.
-- Executing a workflow creates an execution record.
-- Each step logs an execution message.
-- If no steps exist, execution completes with a no-step log.
-- Retry endpoint marks execution as `retrying`.
+- A workflow can be created with steps configured.
+- Executing a workflow triggers the async engine.
+- Steps are executed in order of `step_order` with timing metrics captured.
+- Dynamic placeholders in configurations are resolved in real-time from payload and past steps.
+- Step execution status, failure reasons, retry counts, duration, and results are persisted.
+- Failed steps are retried with dynamic backoffs.
+- If a step completely fails, it either triggers failure isolation (if `continue_on_error` is True) or halts execution (if False).
 
 Not yet implemented:
 
-- Real step handlers
-- Async queue
-- Exponential retry logic
-- Failure isolation by step
+- Async queue (Redis/Celery integration)
 - Workflow cancellation
 - Scheduled triggers
 - Real n8n import/export integration
+
 
 ## AI Integration Status
 
@@ -660,11 +675,11 @@ Marked complete:
 
 - Phase 2 environment setup
 - Phase 3 authentication
+- Phase 4 workflow engine (fully complete except future async queue)
 
 Partially complete:
 
-- Phase 4 workflow engine
-- Phase 5 AI integration
+- Phase 5 AI integration (core summarization and classification step handlers are complete; remaining is OpenAI/Claude native API integrations)
 - Phase 8 frontend dashboard
 - Phase 9 DevOps
 
@@ -676,23 +691,13 @@ Not complete:
 
 ## Recommended Next Step
 
-The next best phase is Phase 4 completion: Workflow Engine.
+The next best priority is:
 
-Recommended order:
+1. Wire the Next.js frontend dashboard to protected backend workflow and execution APIs (currently using mock frontend data).
+2. Add logout and frontend auth guards on the Next.js dashboard route.
+3. Add OpenAI/Claude native API adapter integrations for the AI services.
+4. Implement Slack and email integrations in the notification system.
 
-1. Add migration execution to Docker/local setup documentation or backend container startup.
-2. Add real workflow step handler registry.
-3. Implement step types:
-   - `ai_summarize`
-   - `ai_classify`
-   - `notify`
-   - `approval`
-   - `webhook_call`
-4. Store step-level execution results.
-5. Add retry count, max retry count, and failure reason fields.
-6. Generate a new Alembic migration for workflow execution metadata changes.
-7. Wire frontend dashboard to real protected workflow APIs.
-8. Add logout and frontend auth guard.
 
 ## Useful Commands
 
@@ -745,5 +750,6 @@ docker compose up --build
 Use this if starting a fresh Codex session:
 
 ```text
-Read uptonow.md and all .ai files. Continue the AI Workflow Automation Platform from the current state. Alembic migration support is already implemented and startup create_all has been removed. The next priority is completing Phase 4 workflow engine safely: add migration execution to setup/deployment, implement real workflow step handlers, add step-level execution results and retry metadata with a new Alembic migration, then wire the dashboard to protected backend workflow APIs. Preserve existing architecture and tests.
+Read uptonow.md and all .ai files. Continue the AI Workflow Automation Platform from the current state. The workflow step handler registry, real executable steps (ai_summarize, ai_classify, notify, webhook_call, approval), step-level DB executions table, retries/backoffs, and failure isolation are fully implemented and verified via passing test suites. The next priority is wiring the Next.js frontend dashboard to backend protected workflow and execution APIs, adding frontend logout and auth guards, and implementing real OpenAI/Claude API adapters in Phase 5.
 ```
+

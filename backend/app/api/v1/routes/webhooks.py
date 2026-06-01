@@ -12,8 +12,9 @@ router = APIRouter()
 
 
 @router.post("/{workflow_id}", response_model=APIResponse[dict[str, str]])
-async def receive_webhook(workflow_id: UUID, request: Request, db: Session = Depends(get_db)) -> APIResponse[dict[str, str]]:
+async def receive_webhook(
+    workflow_id: UUID, request: Request, db: Session = Depends(get_db)
+) -> APIResponse[dict[str, str]]:
     payload = await request.json()
-    execution = WorkflowService(db).execute_workflow(workflow_id, ExecuteWorkflowRequest(payload=payload))
+    execution = await WorkflowService(db).execute_workflow(workflow_id, ExecuteWorkflowRequest(payload=payload))
     return APIResponse(message="Webhook accepted", data={"execution_id": str(execution.id), "status": execution.status})
-

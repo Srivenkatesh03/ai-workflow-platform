@@ -1,15 +1,21 @@
+import asyncio
+import time
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.models.step_execution import StepExecution
 from app.repositories.execution_repository import ExecutionRepository
 from app.repositories.workflow_repository import WorkflowRepository
 from app.schemas.workflow import ExecuteWorkflowRequest, WorkflowCreate, WorkflowUpdate
+from app.workflows.registry import StepHandlerRegistry
 
 
 class WorkflowService:
     def __init__(self, db: Session):
+        self.db = db
         self.workflows = WorkflowRepository(db)
         self.executions = ExecutionRepository(db)
 
@@ -31,17 +37,102 @@ class WorkflowService:
     def delete_workflow(self, workflow_id: UUID) -> None:
         self.workflows.delete(self.get_workflow(workflow_id))
 
-    def execute_workflow(self, workflow_id: UUID, payload: ExecuteWorkflowRequest):
+    async def execute_workflow(self, workflow_id: UUID, payload: ExecuteWorkflowRequest):
         workflow = self.get_workflow(workflow_id)
         execution = self.executions.create(workflow.id)
         self.executions.add_log(execution.id, f"Workflow '{workflow.name}' started")
 
+        # Initialize shared context for execution
+        context = {
+            "payload": payload.payload,
+            "steps": {},
+            "db": self.db,
+        }
+
         try:
             for step in sorted(workflow.steps, key=lambda item: item.step_order):
                 self.executions.add_log(execution.id, f"Executing {step.step_type} step")
+
+                # Create running StepExecution record
+                step_exec = StepExecution(
+                    execution_id=execution.id,
+                    step_id=step.id,
+                    status="running",
+                    retry_count=0,
+                    duration_sec=0.0,
+                    results={},
+                )
+                self.db.add(step_exec)
+                self.db.commit()
+                self.db.refresh(step_exec)
+
+                handler = StepHandlerRegistry.get_handler(step.step_type)
+                max_retries = step.configuration.get("max_retries", 0)
+                backoff_factor = step.configuration.get("backoff_factor", 1.0)
+
+                retry_count = 0
+                success = False
+                start_time = time.time()
+                step_result = {}
+                failure_reason = None
+
+                while True:
+                    try:
+                        step_result = await handler.execute(step.configuration, context)
+                        success = True
+                        break
+                    except Exception as step_exc:
+                        failure_reason = str(step_exc)
+                        self.executions.add_log(
+                            execution.id,
+                            f"Step {step.step_type} failed (attempt {retry_count + 1}/{max_retries + 1}): {failure_reason}",
+                            "warning",
+                        )
+                        if retry_count < max_retries:
+                            retry_count += 1
+                            # Exponential/linear backoff
+                            delay = backoff_factor**retry_count
+                            await asyncio.sleep(delay)
+                        else:
+                            break
+
+                duration = time.time() - start_time
+                step_exec.duration_sec = duration
+                step_exec.retry_count = retry_count
+
+                if success:
+                    step_exec.status = "completed"
+                    step_exec.results = step_result
+                    self.db.commit()
+
+                    # Save step result to shared context under its step type
+                    context["steps"][step.step_type] = step_result
+                    self.executions.add_log(execution.id, f"Step {step.step_type} completed successfully")
+                else:
+                    step_exec.status = "failed"
+                    step_exec.failure_reason = failure_reason
+                    self.db.commit()
+                    self.executions.add_log(execution.id, f"Step {step.step_type} failed: {failure_reason}", "error")
+
+                    # Check if workflow can continue despite failure
+                    continue_on_error = step.configuration.get("continue_on_error", False)
+                    if continue_on_error:
+                        self.executions.add_log(
+                            execution.id,
+                            f"Continuing workflow execution despite failure of step {step.step_type} (continue_on_error=True)",
+                        )
+                    else:
+                        raise Exception(f"Workflow execution stopped due to step {step.step_type} failure: {failure_reason}")
+
             if not workflow.steps:
                 self.executions.add_log(execution.id, "No steps configured; execution completed")
+
+            # Load step executions before returning to prevent lazy loading issues in async context
+            self.db.refresh(execution)
             return self.executions.complete(execution, "completed")
+
         except Exception as exc:
-            self.executions.add_log(execution.id, str(exc), "error")
+            self.executions.add_log(execution.id, f"Workflow execution failed: {str(exc)}", "error")
+            self.db.refresh(execution)
             return self.executions.complete(execution, "failed")
+
