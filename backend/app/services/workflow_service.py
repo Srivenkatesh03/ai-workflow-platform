@@ -47,7 +47,10 @@ class WorkflowService:
             "payload": payload.payload,
             "steps": {},
             "db": self.db,
+            "execution_id": execution.id,
+            "workflow_source": f"workflows/{workflow.id}",
         }
+
 
         try:
             for step in sorted(workflow.steps, key=lambda item: item.step_order):

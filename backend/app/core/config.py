@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     n8n_base_url: str = "http://localhost:5678"
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
+    # AI Config
+    ai_provider: str = "ollama"
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3"
+    mock_model: str = "mock-gpt-4"
+
+
 
 @lru_cache
 def get_settings() -> Settings:

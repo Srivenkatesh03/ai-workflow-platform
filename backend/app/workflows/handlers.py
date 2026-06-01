@@ -67,8 +67,13 @@ class AISummarizeHandler(BaseStepHandler):
         if not resolved_text:
             raise ValueError("Input 'text' is missing or resolved to empty string in ai_summarize step")
 
-        ai_service = AIService()
-        result = await ai_service.summarize(resolved_text, provider)
+        ai_service = AIService(db=context.get("db"))
+        result = await ai_service.summarize(
+            resolved_text,
+            provider=provider,
+            workflow_source=context.get("workflow_source"),
+            execution_id=context.get("execution_id"),
+        )
 
         return {
             "summary": result.output,
@@ -96,8 +101,15 @@ class AIClassifyHandler(BaseStepHandler):
         # Convert all elements in labels to string
         labels = [str(lbl) for lbl in resolved_labels]
 
-        ai_service = AIService()
-        result = await ai_service.classify(resolved_text, labels, provider)
+        ai_service = AIService(db=context.get("db"))
+        result = await ai_service.classify(
+            resolved_text,
+            labels,
+            provider=provider,
+            workflow_source=context.get("workflow_source"),
+            execution_id=context.get("execution_id"),
+        )
+
 
         return {
             "category": result.output,
