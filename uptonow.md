@@ -494,28 +494,31 @@ Frontend routes:
 
 Implemented:
 
-- Operational dashboard first screen
-- Sidebar navigation
-- Workflow queue table
-- Execution log panel
-- Status pills
-- Login page
-- Register page
-- Auth form component
-- Auth service storing access/refresh tokens in localStorage
-- Fetch-based API helper
+- Operational dashboard fully integrated with live backend APIs (workflows, executions, and queue status)
+- Sidebar navigation dynamically displaying user profiles, roles, and functional log-out operations
+- Real-time polling fetching data every 4 seconds for immediate operation updates
+- Queue status dashboard showing Redis connection, worker states, and queued tasks
+- Workflow CRUD controls (creating workflows with interactive step builders, editing properties, deleting rows)
+- Execution triggers enabling manual workflow executes with customizable JSON inputs
+- Timeline stepper displays showing step logs, metrics, duration timers, retry factors, and JSON results
+- Centralized Auth Context managing user state, credentials, and client route protection
+- API client with transparent automatic refresh token logic for smooth session continuation on 401s
+- Visual error indicators with Try Reconnect triggers for offline fallback handling
 
 Key files:
 
 ```text
 frontend/app/page.tsx
+frontend/app/layout.tsx
 frontend/app/login/page.tsx
 frontend/app/register/page.tsx
 frontend/components/auth-form.tsx
 frontend/components/sidebar.tsx
 frontend/components/status-pill.tsx
+frontend/context/auth-context.tsx
 frontend/services/api.ts
 frontend/services/auth.ts
+frontend/services/workflow.ts
 frontend/types/auth.ts
 frontend/types/workflow.ts
 frontend/lib/sample-data.ts
@@ -523,9 +526,8 @@ frontend/lib/sample-data.ts
 
 Important note:
 
-- The dashboard currently uses sample frontend data.
-- It is not yet wired to authenticated backend workflow APIs.
-- Login/register pages call the backend auth endpoints via `NEXT_PUBLIC_API_BASE_URL`.
+- The dashboard is completely operational, authenticated, and wired to live backend APIs.
+- Fully supports background Celery Redis task monitoring and retry capabilities.
 
 ## Docker and DevOps Summary
 
@@ -639,13 +641,11 @@ Still needed:
 - Add CI validation for migration heads.
 - Add a deployment step that runs migrations before starting new backend containers.
 
-### Frontend Auth Guard
+### Frontend Auth Guard (Fully Completed)
 
-The frontend has login/register pages and stores tokens, but:
-
-- dashboard route `/` is not guarded yet
-- logout button is not implemented
-- dashboard API calls are not wired to backend data
+- The dashboard route `/` is now protected using Next.js routing and the `AuthProvider` component, automatically redirecting non-operators to `/login`.
+- A profile card with a responsive "Sign out" button has been integrated at the bottom of the sidebar.
+- All dashboard operations, CRUD elements, and statistics calculations are completely wired into live, authenticated backend REST APIs.
 
 ### Backend Auth Hardening
 
@@ -711,7 +711,7 @@ Marked complete:
 
 Partially complete:
 
-- Phase 8 frontend dashboard (auth pages completed)
+- Phase 8 frontend dashboard (fully complete including real-time API integrations, auth guards, token persistence, queue monitoring dashboard, workflow CRUD modals, and execution details timelines)
 - Phase 9 DevOps (Nginx setup completed)
 
 Not complete:
@@ -724,10 +724,9 @@ Not complete:
 
 The next best priority is:
 
-1. Wire the Next.js frontend dashboard to protected backend workflow and execution APIs (currently using mock frontend data).
-2. Add logout and frontend auth guards on the Next.js dashboard route.
-3. Add OpenAI/Claude native API adapter integrations for the AI services.
-4. Implement Slack and email integrations in the notification system.
+1. Add OpenAI/Claude native API adapter integrations for the AI services in Phase 5.
+2. Implement Slack and email integrations in the notification system in Phase 7.
+3. Implement Phase 6 document processing capabilities.
 
 
 ## Useful Commands

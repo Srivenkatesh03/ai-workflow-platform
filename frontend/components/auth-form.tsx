@@ -5,12 +5,13 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { ArrowRight, LockKeyhole, Mail, User } from "lucide-react";
 
-import { login, register } from "@/services/auth";
+import { useAuth } from "@/context/auth-context";
 
 type AuthMode = "login" | "register";
 
 export function AuthForm({ mode }: { mode: AuthMode }) {
   const router = useRouter();
+  const { login, register } = useAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -29,7 +30,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
       } else {
         await login(email, password);
       }
-      router.push("/");
+      // router.push is handled by the AuthProvider redirect or within the auth functions
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Authentication failed");
     } finally {
