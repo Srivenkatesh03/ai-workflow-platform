@@ -1,4 +1,14 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
+export function getApiBaseUrl(): string {
+  if (typeof window !== "undefined") {
+    if (window.location.port === "3000") {
+      return "http://localhost:8000/api/v1";
+    }
+    return `${window.location.origin}/api/v1`;
+  }
+  return process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
+}
+
+export const API_BASE_URL = getApiBaseUrl();
 
 type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;

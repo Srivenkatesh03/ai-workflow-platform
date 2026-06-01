@@ -28,8 +28,30 @@ async def retry_execution(
     execution = repository.get(execution_id)
     if not execution:
         raise HTTPException(status_code=404, detail="Execution not found")
-    execution.status = "retrying"
+
+    # Find the original payload from the logs
+    import json
+    payload_data = {}
+    from sqlalchemy import select
+    from app.models.execution_log import ExecutionLog
+    statement = select(ExecutionLog).where(ExecutionLog.execution_id == execution.id)
+    logs = db.scalars(statement).all()
+    for log in logs:
+        if log.message.startswith("INPUT_PAYLOAD: "):
+            try:
+                payload_data = json.loads(log.message[len("INPUT_PAYLOAD: "):])
+                break
+            except Exception:
+                pass
+
+    execution.status = "queued"
     db.commit()
     db.refresh(execution)
-    repository.add_log(execution.id, "Execution marked for retry")
+
+    repository.add_log(execution.id, "Execution retry triggered")
+
+    # Enqueue task in Celery
+    from app.tasks.workflow_tasks import execute_workflow_task
+    execute_workflow_task.delay(str(execution.workflow_id), payload_data, str(execution.id))
+
     return APIResponse(message="Execution retry queued", data=execution)

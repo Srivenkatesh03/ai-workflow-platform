@@ -22,6 +22,10 @@ services:
     container_name: ai-backend
     env_file:
       - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,7 +64,7 @@ services:
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
-      - "8080:80"
+      - "8082:80"
 
   redis:
     image: redis:7-alpine
@@ -77,6 +81,10 @@ services:
     command: celery -A app.worker.celery_app worker --loglevel=info --pool=solo
     env_file:
       - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
     depends_on:
       postgres:
         condition: service_healthy

@@ -12,7 +12,12 @@ const items = [
   { label: "Alerts", icon: Bell }
 ];
 
-export function Sidebar() {
+type SidebarProps = {
+  activeView?: string;
+  onViewChange?: (view: string) => void;
+};
+
+export function Sidebar({ activeView = "dashboard", onViewChange }: SidebarProps) {
   const { user, logout } = useAuth();
 
   return (
@@ -29,13 +34,17 @@ export function Sidebar() {
         </div>
 
         <nav className="space-y-1">
-          {items.map((item, index) => {
+          {items.map((item) => {
             const Icon = item.icon;
+            const viewName = item.label.toLowerCase().replace(" ", "-");
+            const isActive = activeView === viewName;
+            
             return (
               <button
                 key={item.label}
+                onClick={() => onViewChange?.(viewName)}
                 className={`flex h-10 w-full items-center gap-3 rounded px-3 text-left text-sm transition-all duration-200 ${
-                  index === 0 
+                  isActive 
                     ? "bg-panel font-semibold text-ink shadow-sm" 
                     : "text-slate-600 hover:bg-panel hover:translate-x-1"
                 }`}

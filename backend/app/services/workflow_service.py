@@ -41,6 +41,8 @@ class WorkflowService:
         workflow = self.get_workflow(workflow_id)
         execution = self.executions.create_queued(workflow.id)
         self.executions.add_log(execution.id, f"Workflow '{workflow.name}' queued for background execution")
+        import json
+        self.executions.add_log(execution.id, f"INPUT_PAYLOAD: {json.dumps(payload.payload)}")
         
         # Publish 'workflow_queued' event
         from app.core.websockets import publish_workflow_event, publish_queue_status

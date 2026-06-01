@@ -421,7 +421,7 @@ Not yet implemented:
 Completed:
 
 - Set up a clean `celery_app` configuration in `backend/app/core/celery.py`.
-- Added Celery worker process discovery and task autodiscovery under `backend/app/worker.py`.
+- Added Celery worker process and explicit task module registrations under `backend/app/worker.py` (resolving unregistered task KeyErrors on worker containers).
 - Created background workflow task `execute_workflow_task` in `backend/app/tasks/workflow_tasks.py` and background AI task `execute_ai_task` in `backend/app/tasks/ai_tasks.py`.
 - Configured dynamic fallback execution mechanism (new thread execution) if tasks are run eagerly in environments where an active event loop is already running (e.g. within testing environments).
 - Added `GET /api/v1/queue/status` endpoint in `backend/app/api/v1/routes/queue.py` to check Redis connection, default Celery queue length, and active workers.
@@ -558,7 +558,7 @@ Ports:
 ```text
 Frontend: http://localhost:3000
 Backend:  http://localhost:8000
-Nginx:    http://localhost:8080
+Nginx:    http://localhost:8082
 n8n:      http://localhost:5678
 Postgres: localhost:5432
 ```
@@ -636,15 +636,10 @@ http://localhost:3000/register -> 200
 
 ## Known Issues and Gaps
 
-### Database Migrations
+### Database Migrations (Fully Completed)
 
-Alembic is now set up. Startup table creation has been removed.
+- Alembic migrations are now fully copied and executed automatically on container startup (`alembic upgrade head` is integrated into `backend/Dockerfile` CMD). The schema is initialized dynamically upon database boot.
 
-Still needed:
-
-- Run `alembic upgrade head` as part of local setup or container startup.
-- Add CI validation for migration heads.
-- Add a deployment step that runs migrations before starting new backend containers.
 
 ### Frontend Auth Guard (Fully Completed)
 

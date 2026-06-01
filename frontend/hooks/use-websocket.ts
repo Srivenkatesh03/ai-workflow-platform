@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { getAccessToken } from "@/services/auth";
+import { getApiBaseUrl } from "@/services/api";
 import type { QueueStatusRead } from "@/services/workflow";
 
 export type WebSocketEvent = {
@@ -42,7 +43,7 @@ export function useWebsocket(onEventReceived?: (event: WebSocketEvent) => void) 
     setIsConnecting(true);
     
     // Construct WebSocket URL from HTTP API base
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
+    const apiBase = getApiBaseUrl();
     const wsBaseUrl = apiBase.replace(/^http/, "ws") + "/ws";
     const url = `${wsBaseUrl}?token=${encodeURIComponent(token)}`;
 

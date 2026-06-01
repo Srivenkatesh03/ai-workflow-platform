@@ -38,7 +38,9 @@ import {
   ExecutionRead,
   QueueStatusRead,
   BackendWorkflowStep,
-  StepExecutionRead
+  StepExecutionRead,
+  fetchAILogs,
+  AILogRead
 } from "@/services/workflow";
 import { apiRequest } from "@/services/api";
 import { ApiResponse } from "@/types/auth";
@@ -46,6 +48,10 @@ import { useWebsocket, WebSocketEvent } from "@/hooks/use-websocket";
 
 export default function Home() {
   const { user } = useAuth();
+  
+  // View state and dynamic datasets
+  const [activeView, setActiveView] = useState("dashboard");
+  const [aiLogs, setAILogs] = useState<AILogRead[]>([]);
   
   // Data states
   const [workflows, setWorkflows] = useState<BackendWorkflowRead[]>([]);
@@ -90,18 +96,23 @@ export default function Home() {
     
     setError(null);
     try {
-      const [wfs, execs, qStatus] = await Promise.all([
+      const [wfs, execs, qStatus, logs] = await Promise.all([
         fetchWorkflows(),
         fetchExecutions(),
         fetchQueueStatus().catch(err => {
           console.warn("Queue status API failed:", err);
           return null; // fallback gracefully if queue/status fails
+        }),
+        fetchAILogs().catch(err => {
+          console.warn("AI Logs API failed:", err);
+          return [];
         })
       ]);
       
       setWorkflows(wfs);
       setExecutions(execs);
       if (qStatus) setQueueStatus(qStatus);
+      setAILogs(logs);
     } catch (err: any) {
       console.error("Dashboard failed to fetch live data:", err);
       setError(err?.message ?? "Failed to connect to backend APIs. Make sure the backend server is running.");
@@ -120,9 +131,10 @@ export default function Home() {
       return;
     }
 
-    // Refresh workflows list to sync metrics dynamically on creations/completions
+    // Refresh workflows and AI logs list dynamically on creations/completions
     if (eventName === "workflow_completed" || eventName === "workflow_queued") {
       fetchWorkflows().then(setWorkflows).catch(console.error);
+      fetchAILogs().then(setAILogs).catch(console.error);
     }
 
     // Helper state synchronizer for both main list and execution viewer
@@ -353,7 +365,10 @@ export default function Home() {
   // Create Workflow Action
   async function handleCreateWorkflow(e: React.FormEvent) {
     e.preventDefault();
-    if (!workflowName.trim()) return;
+    if (!workflowName.trim() || workflowName.trim().length < 2) {
+      showToast("Workflow name must be at least 2 characters.", "error");
+      return;
+    }
 
     setIsSubmittingAction(true);
     try {
@@ -386,11 +401,11 @@ export default function Home() {
   function addStepToCreator(type: string) {
     let defaultConfig: Record<string, any> = {};
     if (type === "ai_summarize") {
-      defaultConfig = { prompt_template: "Summarize: {{ payload.text }}", max_retries: 2, backoff_factor: 1.5 };
+      defaultConfig = { text: "Summarize: {{ payload.text }}", max_retries: 2, backoff_factor: 1.5 };
     } else if (type === "ai_classify") {
-      defaultConfig = { classes: ["urgent", "normal", "low"], text: "{{ payload.text }}" };
+      defaultConfig = { labels: ["urgent", "normal", "low"], text: "{{ payload.text }}" };
     } else if (type === "notify") {
-      defaultConfig = { channel: "slack", message: "Workflow executed with ID: {{ execution_id }}" };
+      defaultConfig = { channel: "slack", recipient: "ops-channel", message: "Workflow executed with ID: {{ execution_id }}" };
     } else if (type === "webhook_call") {
       defaultConfig = { url: "https://httpbin.org/post", method: "POST" };
     } else if (type === "approval") {
@@ -572,14 +587,21 @@ export default function Home() {
         </div>
       )}
 
-      <Sidebar />
+      <Sidebar activeView={activeView} onViewChange={setActiveView} />
       
       <section className="min-w-0 flex-1 flex flex-col">
         {/* Header */}
         <header className="flex flex-wrap items-center justify-between gap-4 border-b border-line bg-white px-4 py-4 md:px-7">
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-bold tracking-tight">Workflow Operations</h1>
+              <h1 className="text-xl font-bold tracking-tight">
+                {activeView === "dashboard" && "Workflow Operations"}
+                {activeView === "workflows" && "Workflow Registry"}
+                {activeView === "executions" && "Executions Ledger"}
+                {activeView === "ai-logs" && "AI Latency & Analytics"}
+                {activeView === "documents" && "File Storage"}
+                {activeView === "alerts" && "Operations Alerts"}
+              </h1>
               {isRefreshing && <Loader2 size={16} className="text-slate-400 animate-spin" />}
               
               {/* Pulsing Live Connection Status Pill */}
@@ -596,7 +618,14 @@ export default function Home() {
                 {isConnected ? "Live Stream Connected" : isConnecting ? "Reconnecting stream..." : "Stream Offline"}
               </span>
             </div>
-            <p className="mt-1 text-xs text-slate-500">Monitor executions, queue statuses, and sequential AI tasks in realtime.</p>
+            <p className="mt-1 text-xs text-slate-500">
+              {activeView === "dashboard" && "Monitor executions, queue statuses, and sequential AI tasks in realtime."}
+              {activeView === "workflows" && "Manage and orchestrate sequential steps and AI prompts."}
+              {activeView === "executions" && "Audit the detailed history of all automation runs."}
+              {activeView === "ai-logs" && "Analyze LLM response speeds, token usage counts, and prompts."}
+              {activeView === "documents" && "Access safe PDF resume indices and parsed contents."}
+              {activeView === "alerts" && "Manage operations warnings and Slack routing rules."}
+            </p>
           </div>
           <div className="flex items-center gap-3">
             <button 
@@ -636,7 +665,8 @@ export default function Home() {
         )}
 
         {/* Dashboard Content */}
-        <div className="flex-1 px-4 py-5 md:px-7 space-y-5 overflow-y-auto">
+        {activeView === "dashboard" && (
+          <div className="flex-1 px-4 py-5 md:px-7 space-y-5 overflow-y-auto">
           {/* Stats Section */}
           <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {stats.map((stat) => {
@@ -869,7 +899,273 @@ export default function Home() {
               )}
             </div>
           </section>
-        </div>
+          </div>
+        )}
+
+        {/* VIEW 2: WORKFLOWS REGISTRY LIST */}
+        {activeView === "workflows" && (
+          <div className="flex-1 px-4 py-5 md:px-7 space-y-5 overflow-y-auto">
+            <div className="rounded-xl border border-line bg-white p-6 shadow-sm">
+              <div className="flex items-center justify-between border-b border-line pb-4 mb-6">
+                <div>
+                  <h2 className="text-md font-bold tracking-tight text-ink">Active Workflow Registry</h2>
+                  <p className="text-xs text-slate-400 mt-1">Configure multi-step steps, prompt logic, and manual triggers.</p>
+                </div>
+                <button 
+                  onClick={() => { resetCreateForm(); setIsCreateOpen(true); }}
+                  className="flex h-9 items-center gap-2 rounded-lg bg-ink px-4 text-xs font-semibold text-white shadow hover:bg-black transition-all"
+                >
+                  <Plus size={14} />
+                  Add Workflow
+                </button>
+              </div>
+
+              {isLoading ? (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {[1, 2, 3, 4].map(i => <div key={i} className="h-32 bg-panel animate-pulse rounded-lg" />)}
+                </div>
+              ) : mappedWorkflows.length === 0 ? (
+                <div className="text-center py-10">
+                  <Activity size={24} className="text-slate-300 mx-auto mb-2" />
+                  <p className="text-xs font-bold text-slate-500">No workflows in registry.</p>
+                </div>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {mappedWorkflows.map(wf => (
+                    <div key={wf.id} className="border border-line rounded-xl bg-panel/30 p-5 flex flex-col justify-between hover:border-slate-400 transition-all duration-200">
+                      <div>
+                        <div className="flex items-start justify-between gap-3">
+                          <h3 className="font-bold text-sm text-ink leading-tight">{wf.name}</h3>
+                          <span className="inline-flex rounded-full bg-white px-2 py-0.5 text-[9px] font-bold text-slate-600 border border-line leading-none">
+                            {wf.trigger_type}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-2 line-clamp-3 leading-relaxed">{wf.description || "No description provided."}</p>
+                      </div>
+
+                      <div className="mt-6 border-t border-line/60 pt-4 flex items-center justify-between text-xs">
+                        <div>
+                          <p className="text-[10px] text-slate-400 uppercase">Runs</p>
+                          <p className="font-bold text-slate-700 mt-0.5">{wf.executions}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-400 uppercase">Success</p>
+                          <p className="font-bold text-teal-700 mt-0.5">{wf.successRate}%</p>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button 
+                            onClick={() => handleOpenRun(wf)}
+                            className="h-8 w-8 rounded-full border border-teal-100 bg-teal-50 flex items-center justify-center text-teal-800 hover:bg-teal-100"
+                            title="Run"
+                          >
+                            <Play size={11} fill="currentColor" />
+                          </button>
+                          <button 
+                            onClick={() => handleOpenEdit(wf)}
+                            className="h-8 w-8 rounded-full border border-line bg-white flex items-center justify-center text-slate-500 hover:bg-panel"
+                            title="Edit"
+                          >
+                            <Edit2 size={11} />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteWorkflow(wf.id, wf.name)}
+                            className="h-8 w-8 rounded-full border border-red-100 bg-red-50/55 flex items-center justify-center text-red-500 hover:bg-red-50"
+                            title="Delete"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* VIEW 3: DEDICATED EXECUTIONS MONITOR */}
+        {activeView === "executions" && (
+          <div className="flex-1 px-4 py-5 md:px-7 space-y-5 overflow-y-auto">
+            <div className="rounded-xl border border-line bg-white p-6 shadow-sm">
+              <h2 className="text-md font-bold tracking-tight text-ink border-b border-line pb-4 mb-4">Executions Ledger</h2>
+              
+              {isLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map(i => <div key={i} className="h-12 w-full bg-panel animate-pulse rounded-lg" />)}
+                </div>
+              ) : executions.length === 0 ? (
+                <div className="text-center py-10">
+                  <Clock size={24} className="text-slate-300 mx-auto mb-2" />
+                  <p className="text-xs font-bold text-slate-500">No execution logs found in ledger.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[700px] border-collapse text-sm text-left">
+                    <thead className="bg-panel text-slate-500 text-[10px] font-bold uppercase border-b border-line">
+                      <tr>
+                        <th className="px-5 py-3">Execution ID</th>
+                        <th className="px-4 py-3">Workflow</th>
+                        <th className="px-4 py-3">Started</th>
+                        <th className="px-4 py-3">Message Summary</th>
+                        <th className="px-4 py-3 text-center">Status</th>
+                        <th className="px-5 py-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-line/60">
+                      {executions.map(ex => {
+                        const formattedTime = ex.started_at 
+                          ? new Date(ex.started_at).toLocaleString() 
+                          : "Pending";
+                        return (
+                          <tr key={ex.id} className="hover:bg-panel/30">
+                            <td className="px-5 py-4 font-mono text-xs font-semibold text-slate-500">
+                              {ex.id.substring(0, 8)}...
+                            </td>
+                            <td className="px-4 py-4 font-bold text-ink">{getWorkflowName(ex.workflow_id)}</td>
+                            <td className="px-4 py-4 text-xs text-slate-500">{formattedTime}</td>
+                            <td className="px-4 py-4 text-xs text-slate-600 max-w-xs truncate">{getExecutionMessage(ex)}</td>
+                            <td className="px-4 py-4 text-center">
+                              <StatusPill status={ex.status} />
+                            </td>
+                            <td className="px-5 py-4 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  onClick={() => { setSelectedExecution(ex); setIsDetailsOpen(true); }}
+                                  className="flex h-8 items-center gap-1 rounded border border-line bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-panel"
+                                >
+                                  <Eye size={12} />
+                                  Timeline
+                                </button>
+                                {ex.status === "failed" && (
+                                  <button
+                                    onClick={() => handleRetry(ex.id)}
+                                    className="flex h-8 items-center gap-1 rounded bg-amber-50 border border-amber/20 px-3 text-xs font-bold text-amber hover:bg-amber-100"
+                                  >
+                                    <RefreshCw size={11} />
+                                    Retry
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* VIEW 4: AI LATENCY & ANALYTICS LEDGER */}
+        {activeView === "ai-logs" && (
+          <div className="flex-1 px-4 py-5 md:px-7 space-y-5 overflow-y-auto">
+            <div className="rounded-xl border border-line bg-white p-6 shadow-sm">
+              <h2 className="text-md font-bold tracking-tight text-ink border-b border-line pb-4 mb-6">AI Generation History</h2>
+              
+              {isLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map(i => <div key={i} className="h-14 w-full bg-panel animate-pulse rounded-lg" />)}
+                </div>
+              ) : aiLogs.length === 0 ? (
+                <div className="text-center py-10">
+                  <Database size={24} className="text-slate-300 mx-auto mb-2" />
+                  <p className="text-xs font-bold text-slate-500 font-sans">No prompt generation logs found in database.</p>
+                  <p className="text-[10px] text-slate-400 mt-1 max-w-sm mx-auto">Trigger a workflow containing AI Summarize or AI Classify steps to log LLM latency and token statistics.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[800px] border-collapse text-sm text-left">
+                    <thead className="bg-panel text-slate-500 text-[10px] font-bold uppercase border-b border-line">
+                      <tr>
+                        <th className="px-5 py-3">Timestamp</th>
+                        <th className="px-4 py-3">AI Model</th>
+                        <th className="px-4 py-3">Provider</th>
+                        <th className="px-4 py-3 text-center">Prompt Tokens</th>
+                        <th className="px-4 py-3 text-center">Output Tokens</th>
+                        <th className="px-4 py-3 text-center">Latency</th>
+                        <th className="px-4 py-3 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-line/60">
+                      {aiLogs.map(log => {
+                        const formattedTime = log.created_at 
+                          ? new Date(log.created_at).toLocaleString() 
+                          : "Pending";
+                        return (
+                          <tr key={log.id} className="hover:bg-panel/30">
+                            <td className="px-5 py-4 text-xs text-slate-500 font-sans">{formattedTime}</td>
+                            <td className="px-4 py-4 font-bold text-ink">
+                              <span className="rounded bg-panel px-2 py-1 text-xs border border-line">
+                                {log.model}
+                              </span>
+                            </td>
+                            <td className="px-4 py-4 text-xs text-slate-600 font-mono capitalize">{log.provider}</td>
+                            <td className="px-4 py-4 text-center font-mono text-slate-600">{log.prompt_tokens}</td>
+                            <td className="px-4 py-4 text-center font-mono text-slate-600">{log.completion_tokens}</td>
+                            <td className="px-4 py-4 text-center">
+                              <span className="inline-flex items-center gap-1 font-semibold text-teal-800 font-mono text-xs bg-teal-50 border border-teal-100 rounded px-2 py-0.5">
+                                <Clock size={11} />
+                                {log.response_time_ms}ms
+                              </span>
+                            </td>
+                            <td className="px-4 py-4 text-center">
+                              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold border ${
+                                log.success 
+                                  ? "bg-emerald-50 border-emerald-200 text-emerald-800" 
+                                  : "bg-red-50 border-red-200 text-red-800"
+                              }`}>
+                                {log.success ? "Success" : "Failed"}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* VIEW 5: DOCUMENTS PLACEHOLDER */}
+        {activeView === "documents" && (
+          <div className="flex-1 px-4 py-5 md:px-7 space-y-5 overflow-y-auto">
+            <div className="rounded-xl border border-line bg-white p-8 text-center shadow-sm">
+              <Eye size={32} className="text-slate-300 mx-auto mb-3" />
+              <h3 className="text-md font-bold text-ink">Safe PDF Document Parser</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto mt-2 leading-relaxed">
+                Phase 6 Document Processing pipelines are currently in progress. Soon, you will be able to securely upload resume PDF indexes, extract metadata, and pass them downstream directly into workflows.
+              </p>
+              <div className="mt-6 flex items-center justify-center gap-2">
+                <span className="inline-flex items-center rounded bg-slate-50 border border-line px-2.5 py-0.5 text-xs text-slate-600 font-bold uppercase">
+                  Upcoming release: Phase 6
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* VIEW 6: ALERTS PLACEHOLDER */}
+        {activeView === "alerts" && (
+          <div className="flex-1 px-4 py-5 md:px-7 space-y-5 overflow-y-auto">
+            <div className="rounded-xl border border-line bg-white p-8 text-center shadow-sm">
+              <AlertTriangle size={32} className="text-slate-300 mx-auto mb-3" />
+              <h3 className="text-md font-bold text-ink">Operations Slack Alert Routing</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto mt-2 leading-relaxed">
+                Phase 7 Notification Integrations are currently in development. You will soon configure dynamic SMTP servers and Slack Webhook endpoints to route failure alarms to your DevOps teams.
+              </p>
+              <div className="mt-6 flex items-center justify-center gap-2">
+                <span className="inline-flex items-center rounded bg-slate-50 border border-line px-2.5 py-0.5 text-xs text-slate-600 font-bold uppercase">
+                  Upcoming release: Phase 7
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* CREATE WORKFLOW MODAL */}
@@ -898,6 +1194,8 @@ export default function Home() {
                     value={workflowName}
                     onChange={(e) => setWorkflowName(e.target.value)}
                     placeholder="e.g. Resume Processing"
+                    minLength={2}
+                    maxLength={160}
                     required
                   />
                 </label>

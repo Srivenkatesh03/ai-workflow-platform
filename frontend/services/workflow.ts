@@ -99,3 +99,24 @@ export async function fetchQueueStatus(): Promise<QueueStatusRead> {
   const response = await apiRequest<ApiResponse<QueueStatusRead>>("/queue/status");
   return response.data;
 }
+
+export type AILogRead = {
+  id: string;
+  provider: string;
+  model: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  response_time_ms: number;
+  workflow_id: string | null;
+  execution_id: string | null;
+  success: boolean;
+  error_message: string | null;
+  created_at: string;
+};
+
+export async function fetchAILogs(): Promise<AILogRead[]> {
+  const response = await apiRequest<ApiResponse<AILogRead[]>>("/ai/logs");
+  return response.data;
+}
+
