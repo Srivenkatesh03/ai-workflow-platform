@@ -37,9 +37,31 @@ class WorkflowService:
     def delete_workflow(self, workflow_id: UUID) -> None:
         self.workflows.delete(self.get_workflow(workflow_id))
 
-    async def execute_workflow(self, workflow_id: UUID, payload: ExecuteWorkflowRequest):
+    def enqueue_workflow(self, workflow_id: UUID, payload: ExecuteWorkflowRequest):
         workflow = self.get_workflow(workflow_id)
-        execution = self.executions.create(workflow.id)
+        execution = self.executions.create_queued(workflow.id)
+        self.executions.add_log(execution.id, f"Workflow '{workflow.name}' queued for background execution")
+        
+        from app.tasks.workflow_tasks import execute_workflow_task
+        execute_workflow_task.delay(str(workflow_id), payload.payload, str(execution.id))
+        
+        self.db.refresh(execution)
+        return execution
+
+    async def execute_workflow(self, workflow_id: UUID, payload: ExecuteWorkflowRequest, execution_id: UUID | None = None):
+        workflow = self.get_workflow(workflow_id)
+        if execution_id:
+            execution = self.executions.get(execution_id)
+            if not execution:
+                execution = self.executions.create(workflow.id)
+            else:
+                execution.status = "running"
+                execution.started_at = datetime.now(timezone.utc)
+                self.db.commit()
+                self.db.refresh(execution)
+        else:
+            execution = self.executions.create(workflow.id)
+            
         self.executions.add_log(execution.id, f"Workflow '{workflow.name}' started")
 
         # Initialize shared context for execution

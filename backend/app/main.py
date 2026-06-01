@@ -1,6 +1,9 @@
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 
+# Initialize Celery app configuration early to bind shared tasks correctly
+from app.worker import celery_app
+
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers

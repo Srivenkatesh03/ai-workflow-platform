@@ -98,11 +98,16 @@ Key files:
 ```text
 backend/app/main.py
 backend/app/core/config.py
+backend/app/core/celery.py
 backend/app/core/security.py
 backend/app/database/base.py
 backend/app/database/session.py
 backend/app/api/dependencies.py
 backend/app/api/v1/router.py
+backend/app/api/v1/routes/queue.py
+backend/app/worker.py
+backend/app/tasks/workflow_tasks.py
+backend/app/tasks/ai_tasks.py
 backend/alembic.ini
 backend/alembic/env.py
 ```
@@ -389,11 +394,13 @@ Completed:
 - Exponential and linear retry logic with backoff delay
 - Failure isolation by step (using `continue_on_error` configuration)
 - Full async execution engine in backend service and API controllers
+- Async queue (Redis/Celery integration) for background execution of workflows
 
 Current behavior:
 
 - A workflow can be created with steps configured.
-- Executing a workflow triggers the async engine.
+- Executing a workflow queues it in the Celery Redis queue.
+- Celery worker picks up and runs the workflow asynchronously.
 - Steps are executed in order of `step_order` with timing metrics captured.
 - Dynamic placeholders in configurations are resolved in real-time from payload and past steps.
 - Step execution status, failure reasons, retry counts, duration, and results are persisted.
@@ -402,10 +409,22 @@ Current behavior:
 
 Not yet implemented:
 
-- Async queue (Redis/Celery integration)
 - Workflow cancellation
 - Scheduled triggers
 - Real n8n import/export integration
+
+
+## Redis/Celery Background Queue Status
+
+Completed:
+
+- Set up a clean `celery_app` configuration in `backend/app/core/celery.py`.
+- Added Celery worker process discovery and task autodiscovery under `backend/app/worker.py`.
+- Created background workflow task `execute_workflow_task` in `backend/app/tasks/workflow_tasks.py` and background AI task `execute_ai_task` in `backend/app/tasks/ai_tasks.py`.
+- Configured dynamic fallback execution mechanism (new thread execution) if tasks are run eagerly in environments where an active event loop is already running (e.g. within testing environments).
+- Added `GET /api/v1/queue/status` endpoint in `backend/app/api/v1/routes/queue.py` to check Redis connection, default Celery queue length, and active workers.
+- Enabled Celery eager-mode testing and database ID-to-UUID type validation in the test suite to ensure comprehensive coverage.
+- Fully integrated Redis (`redis:7-alpine`) and background worker service (`ai-worker`) into the `docker-compose.yml` stack.
 
 
 ## AI Integration Status
@@ -686,19 +705,20 @@ Marked complete:
 
 - Phase 2 environment setup
 - Phase 3 authentication
-- Phase 4 workflow engine (fully complete except future async queue)
+- Phase 4 workflow engine (fully complete including Redis/Celery async queue background execution)
 - Phase 5 AI integration (Production-grade Ollama integration, robust timeout/retry mechanics, schema extended metrics tracking, prompt templates system foundation, and `/api/generate` & `/api/chat` endpoints are fully complete!)
+- Phase 10 - Redis queue (from Advanced Features)
 
 Partially complete:
 
-- Phase 8 frontend dashboard
-- Phase 9 DevOps
+- Phase 8 frontend dashboard (auth pages completed)
+- Phase 9 DevOps (Nginx setup completed)
 
 Not complete:
 
 - Phase 6 document processing
 - Phase 7 notifications
-- Phase 10 advanced features
+- Remaining parts of Phase 10 (RBAC, AI agents, Multi-tenant support, Observability, Workflow templates)
 
 ## Recommended Next Step
 
@@ -761,6 +781,6 @@ docker compose up --build
 Use this if starting a fresh Codex session:
 
 ```text
-Read uptonow.md and all .ai files. Continue the AI Workflow Automation Platform from the current state. The workflow step handler registry, real executable steps (ai_summarize, ai_classify, notify, webhook_call, approval), step-level DB executions table, retries/backoffs, and failure isolation are fully implemented and verified via passing test suites. The next priority is wiring the Next.js frontend dashboard to backend protected workflow and execution APIs, adding frontend logout and auth guards, and implementing real OpenAI/Claude API adapters in Phase 5.
+Read uptonow.md and all .ai files. Continue the AI Workflow Automation Platform from the current state. The workflow step handler registry, async Celery background queue integration (with Redis broker), step-level DB executions table, retries/backoffs, and failure isolation are fully implemented and verified via passing test suites. The next priority is wiring the Next.js frontend dashboard to backend protected workflow and execution APIs, adding frontend logout and auth guards, and implementing real OpenAI/Claude API adapters in Phase 5.
 ```
 

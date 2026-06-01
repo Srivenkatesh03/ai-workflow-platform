@@ -25,6 +25,13 @@ class ExecutionRepository:
         self.db.refresh(execution)
         return execution
 
+    def create_queued(self, workflow_id: UUID) -> Execution:
+        execution = Execution(workflow_id=workflow_id, status="queued", started_at=datetime.now(timezone.utc))
+        self.db.add(execution)
+        self.db.commit()
+        self.db.refresh(execution)
+        return execution
+
     def add_log(self, execution_id: UUID, message: str, level: str = "info") -> ExecutionLog:
         log = ExecutionLog(execution_id=execution_id, log_level=level, message=message)
         self.db.add(log)

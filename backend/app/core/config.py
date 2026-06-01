@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     ollama_model: str = "llama3"
     mock_model: str = "mock-gpt-4"
 
+    # Queue / Redis Config
+    redis_url: str = "redis://localhost:6379/0"
+    celery_broker_url: str = "redis://localhost:6379/0"
+    celery_result_backend: str = "redis://localhost:6379/0"
+
+
 
 
 @lru_cache

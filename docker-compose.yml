@@ -62,7 +62,29 @@ services:
     ports:
       - "8080:80"
 
+  redis:
+    image: redis:7-alpine
+    container_name: ai-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  worker:
+    build:
+      context: ./backend
+    container_name: ai-worker
+    command: celery -A app.worker.celery_app worker --loglevel=info --pool=solo
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
 volumes:
   postgres-data:
   n8n-data:
+  redis-data:
 
